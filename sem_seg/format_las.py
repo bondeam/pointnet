@@ -1,0 +1,70 @@
+from pathlib import Path
+import os
+import argparse
+import numpy as np
+import pandas as pd
+import dask.dataframe as dd
+from dask.delayed import delayed
+from laspy.file import File
+import morton
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--grid_size', type=int, default=30, help='Size of grid option: 1,2,5,10 [default: 1]')
+parser.add_argument('--translate_origin', action='store_true', default=False, help='Translate origin: True/False [default: False]')
+parser.add_argument('--data_dir', default='/root/data', help='Data dir [default: /root/data/]')
+
+FLAGS = parser.parse_args()
+GRID_SIZE=FLAGS.grid_size
+TRANSLATE_ORIGIN=FLAGS.translate_origin
+DATA_DIR=FLAGS.data_dir
+dropped_columns = ['flag_byte', 'scan_angle_rank', 'user_data', 'pt_src_id','gps_time']
+
+@delayed
+def load(file):
+    with File(file.as_posix(), mode='r') as las_data:
+        las_df = pd.DataFrame(las_data.points['point'], dtype=float).drop(dropped_columns, axis=1)
+        las_df.X = las_df.X*0.01
+        las_df.Y = las_df.Y*0.01
+        las_df.Z = las_df.Z*0.01
+        return las_df
+
+
+def compute_grid_cell_id(df):
+    m = morton.Morton(dimensions=2, bits=64)
+    def get_hash(point, grid_size=GRID_SIZE):
+        return m.pack(int(point.X // grid_size), int(point.Y // grid_size))
+    df['hash'] = df[['X', 'Y']].apply(get_hash, grid_size=GRID_SIZE, meta=('hash', int), axis=1)
+    return df
+
+def normalise(df):
+    df = df.copy()
+    df['XN'] = (df.X - df.X.mean()) / (df.X.max() - df.X.min())
+    df['YN'] = (df.Y - df.Y.mean()) / (df.Y.max() - df.Y.min())
+    df['raw_classification'] = df['raw_classification'].replace(8.0,1.0)
+    return df
+
+if __name__ == "__main__":
+    #load data
+    lasfile_dir = Path(DATA_DIR)
+    lasfiles = sorted(list(lasfile_dir.glob('*.las')))
+    meta = pd.DataFrame(np.empty(0, dtype=[('X',float),('Y',float),('Z',float),('intensity',int),('raw_classification',int)]))
+    dfs = [load(file) for file in lasfiles]
+    df = dd.from_delayed(dfs, meta=meta)
+        
+    #translate origin
+    if TRANSLATE_ORIGIN:
+        df['X'] = df.X - df.X.min()
+        df['Y'] = df.Y - df.Y.min()
+    #get hashes for grid
+    df = compute_grid_cell_id(df)
+
+    #normalize
+    meta = pd.DataFrame(np.empty(0, dtype=list(zip(list(df.columns), list(df.dtypes))) + list(zip(['XN', 'YN'], [np.dtype('float64')]*2))))
+    df = df.groupby('hash').apply(normalise, meta=meta).reset_index(drop=True)
+    df['ZN'] = (df.Z - df.Z.mean()) / (df.Z.max() - df.Z.min())
+
+    #save 
+    save_path = os.path.join(DATA_DIR, 'norm_data')
+    df.to_parquet(save_path, compression='GZIP')
+
+    print('train_custom.py --log_dir=log --max_epoch=50 --num_point=4000 --batch_size=12 --grid_size=30 --xyz --intensity --n_augmentations=1')

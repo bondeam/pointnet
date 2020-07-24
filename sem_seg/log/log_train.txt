@@ -1,0 +1,23 @@
+Namespace(batch_size=12, decay_rate=0.5, decay_step=300000, empty=False, empty100=False, empty500=False, gpu=0, grid_size=30, intensity=True, learning_rate=0.001, log_dir='log', max_epoch=50, momentum=0.9, n_augmentations=1, num_point=4096, optimizer='adam', rgb=False, sample_method='random', test_area=6, trajectory=False, xyz=True, xyzonly=False)
+**** EPOCH 000 ****
+----
+mean loss: 0.045595
+accuracy: 0.744004
+----
+eval mean loss: 0.419816
+eval accuracy: 0.796232
+eval avg class acc: 0.796386
+Model saved in file: log/model.ckpt
+**** EPOCH 001 ****
+----
+mean loss: 0.035619
+accuracy: 0.793680
+----
+eval mean loss: 0.411671
+eval accuracy: 0.806400
+eval avg class acc: 0.806788
+**** EPOCH 002 ****
+----
+mean loss: 0.034212
+accuracy: 0.804034
+----
